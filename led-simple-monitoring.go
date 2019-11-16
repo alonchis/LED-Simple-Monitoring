@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -24,7 +25,7 @@ var (
 	sites = [3]string{
 		"https://google.com",
 		"https://wikipedia.org",
-		"https://github.com/notfound",
+		"https://google.com/notfound",
 	}
 
 	period = time.Minute * 5 // changes how often to check status
@@ -62,10 +63,10 @@ func main() {
 	//listen for interrupt and teardown (turn off leds)
 	signalChan := make(chan os.Signal, 1)
 	cleanupDone := make(chan struct{})
-	signal.Notify(signalChan, os.Interrupt)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGKILL)
 	go func() {
 		<-signalChan
-		fmt.Println("\nReceived an interrupt, stopping services...")
+		log.Println("\nReceived an interrupt, stopping services...")
 		/** turn off leds on exit */
 		for i := 0; i < len(led); i++ {
 			led[i].green.Low()
@@ -77,13 +78,15 @@ func main() {
 	<-cleanupDone
 }
 
+// GetReturnCode checks for status code of $sites every $period, exits on os.interrupt
 func GetReturnCode(site string, led LED) {
 	for {
 		select {
 		case <-signalChan: // exits on interrupt
 			return
 		default:
-			resp, _ := http.Head(site)
+			resp, _ := http.Get(site)
+			defer resp.Body.Close()
 			if resp.StatusCode >= 400 {
 				// handle error, RED on
 				led.green.Low()

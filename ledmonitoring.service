@@ -1,0 +1,9 @@
+[Unit]
+Description=LED monitoring of website
+Requires=local-fs.target
+After=network.target
+[Service]
+ExecStart=/usr/bin/led-simple-monitoring > /var/log/led.log 2>&1 &
+
+[Install]
+WantedBy=multi-user.target
