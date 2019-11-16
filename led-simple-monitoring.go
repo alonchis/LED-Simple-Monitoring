@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"syscall"
 	"time"
 )
 
@@ -30,6 +29,7 @@ var (
 
 	period = time.Minute * 5 // changes how often to check status
 )
+
 
 //LED for two rpio.pin types, green and red, respectively
 type LED struct {
@@ -63,7 +63,8 @@ func main() {
 	//listen for interrupt and teardown (turn off leds)
 	signalChan := make(chan os.Signal, 1)
 	cleanupDone := make(chan struct{})
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGKILL)
+	//signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGKILL)
+	signal.Notify(signalChan, os.Interrupt)
 	go func() {
 		<-signalChan
 		log.Println("\nReceived an interrupt, stopping services...")

@@ -30,8 +30,10 @@ $> sudo cp ./led-simple-monitoring /usr/bin
 copy `ledmonitoring.service` to /etc/systemd/system 
 ```bash
 $> sudo cp ledmonitorin.service /etc/systemd/system
+$> sudo systemctl enable ledmonitoring.service
 $> sudo systemctl start ledmonitoring.service
 ```
+after this, led-monitoring should run automatically even after restart
 
 ### stopping services
 if need to stop service run `sudo systemctl status`
