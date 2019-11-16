@@ -7,27 +7,36 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
+	"time"
 )
 
-var pinsIndex = []int{14, 15, 23, 18, 4, 24} //pattern is red, green, red...
-var Leds [3]LED                              //array to hold all leds
-//add websites to monitor here
-var sites = [3]string{
-	"https://alonsoarteaga.com",
-	"https://alonsoarteaga.me",
-	"http://google.com/example",
-}
+var (
+	// BCM PINS on the board.
+	pinsIndex = []int{14, 15, 23, 18, 4, 24} //LED1 green, LED1 red, LED2 green, ...
 
-//LED has two rpio.pin types, green and blue, respectively
+	//array to store all leds
+	led [3]LED
+
+	//Signal channel to listen for sys interrupt (CTRL+C)
+	signalChan = make(chan os.Signal, 1)
+
+	//add websites to monitor here
+	sites = [3]string{
+		"https://google.com",
+		"https://wikipedia.org",
+		"https://github.com/notfound",
+	}
+
+	period = time.Minute * 5 // changes how often to check status
+)
+
+//LED for two rpio.pin types, green and red, respectively
 type LED struct {
 	green rpio.Pin
 	red   rpio.Pin
 }
 
 func main() {
-	var wg sync.WaitGroup
-
 	/** Open and map memory to access gpio, check for errors */
 	if err := rpio.Open(); err != nil {
 		fmt.Println(err)
@@ -39,22 +48,16 @@ func main() {
 	//Init all leds
 	// probably could be written better
 	counter := 0
-	for i := 0; i < len(Leds); i++ {
-		Leds[i].green = rpio.Pin(pinsIndex[counter])
-		Leds[i].red = rpio.Pin(pinsIndex[counter+1])
+	for i := 0; i < len(led); i++ {
+		led[i].green = rpio.Pin(pinsIndex[counter])
+		led[i].red = rpio.Pin(pinsIndex[counter+1])
 		counter = counter + 2
 	}
 
-	//go StartChecks() // main
-
-	for i := 0; i < 3; i++{
-		wg.Add( 1)
-		go GetReturnCode(sites[i], Leds[i], &wg)
+	// Run go routines
+	for i := 0; i < len(sites); i++ {
+		go GetReturnCode(sites[i], led[i])
 	}
-
-	fmt.Println("waiting for routines to complete")
-	//wg.Wait()
-	fmt.Println("Done")
 
 	//listen for interrupt and teardown (turn off leds)
 	signalChan := make(chan os.Signal, 1)
@@ -62,38 +65,38 @@ func main() {
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
 		<-signalChan
-		fmt.Println("\nReceived an interrupt, stopping services...\n")
+		fmt.Println("\nReceived an interrupt, stopping services...")
 		/** turn off leds on exit */
-		for i := 0; i < len(Leds); i++ {
-			Leds[i].green.Low()
-			Leds[i].red.Low()
+		for i := 0; i < len(led); i++ {
+			led[i].green.Low()
+			led[i].red.Low()
 		}
-		//wg.Done()
 
 		close(cleanupDone)
 	}()
 	<-cleanupDone
 }
 
-func GetReturnCode(site string, led LED, wg *sync.WaitGroup) {
-	//site one
+func GetReturnCode(site string, led LED) {
+	for {
+		select {
+		case <-signalChan: // exits on interrupt
+			return
+		default:
+			resp, _ := http.Head(site)
+			if resp.StatusCode >= 400 {
+				// handle error, RED on
+				led.green.Low()
+				led.red.High()
+				log.Printf("%s unreachable, error code %v\n", site, resp.StatusCode)
+				time.Sleep(period)
+				continue
+			}
 
-	resp, err := http.Get(site)
-	if resp.StatusCode >= 400 {
-		// handle error, RED on
-		led.green.Low()
-		led.red.High()
-		log.Printf("site %s unreachable, error is %v\n", site, err)
-		log.Printf("pingin site %v done\n", site)
-		wg.Done()
-		return
+			log.Printf("%s returned %v OK\n", site, resp.StatusCode)
+			led.red.Low()
+			led.green.High()
+			time.Sleep(period)
+		}
 	}
-	defer resp.Body.Close()
-
-	log.Printf("site %s returned %v OK\n", site, resp.StatusCode)
-	led.red.Low()
-	led.green.High()
-
-	log.Printf("pingin site %v done\n", site)
-	wg.Done()
 }
